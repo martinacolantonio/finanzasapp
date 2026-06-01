@@ -1,245 +1,280 @@
-// ==========================================
-// CAPTURA DE ELEMENTOS DEL DOM
-// ==========================================
-const transaccionForm = document.getElementById('transaction-form');
-const listaTransacciones = document.getElementById('transactions-list');
-const balanceIngresos = document.getElementById('balance-ingresos');
-const balanceGastos = document.getElementById('balance-gastos');
-const balanceNeto = document.getElementById('balance-neto');
-const botonesFiltro = document.querySelectorAll('.btn-filtro');
-const botonesTab = document.querySelectorAll('.nav-link-item');
-const seccionesTab = document.querySelectorAll('.tab-content');
-
-// Elementos de Estadísticas, Configuración y Nuevas Herramientas
-const txtGastoMaximo = document.getElementById('gasto-maximo');
-const txtGastoPromedio = document.getElementById('gasto-promedio');
-const inputLimite = document.getElementById('input-limite');
-const btnGuardarConfig = document.getElementById('btn-guardar-config');
-const alertaPresupuesto = document.getElementById('alerta-presupuesto');
-const inputFecha = document.getElementById('date');
-const btnVaciarTodo = document.getElementById('btn-vaciar-todo');
-const selectMoneda = document.getElementById('select-moneda');
-const inputDolar = document.getElementById('input-dolar');
-const btnGuardarDolar = document.getElementById('btn-guardar-dolar');
-
-// ==========================================
-// ESTADO DE LA APLICACIÓN
-// ==========================================
-let transacciones = JSON.parse(localStorage.getItem('finanzas_datos')) || [];
-let limiteGastos = parseFloat(localStorage.getItem('finanzas_limite')) || 0;
-let valorDolar = parseFloat(localStorage.getItem('finanzas_dolar')) || 1000;
-let filtroActual = 'todos';
-let monedaActual = 'ARS'; // Puede ser ARS o USD
-
-// Dejar la fecha de hoy marcada por defecto en el formulario
-inputFecha.value = new Date().toISOString().split('T')[0];
-if (limiteGastos > 0) inputLimite.value = limiteGastos;
-inputDolar.value = valorDolar;
-
-// ==========================================
-// LOGICA DE INTERCAMBIO DE PESTAÑAS (TABS)
-// ==========================================
-botonesTab.forEach(boton => {
-    boton.addEventListener('click', (e) => {
-        botonesTab.forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-
-        const tabObjetivo = e.target.getAttribute('data-tab');
-        seccionesTab.forEach(seccion => {
-            if (seccion.id === tabObjetivo) seccion.classList.remove('d-none');
-            else seccion.classList.add('d-none');
-        });
-
-        if (tabObjetivo === 'tab-estadisticas') calcularEstadisticas();
-    });
-});
-
-// ==========================================
-// HERRAMIENTA B: FUNCIÓN CONVERSORA DE DIVISAS
-// ==========================================
-const formatearMoneda = (monto) => {
-    if (monedaActual === 'USD') {
-        const convertido = monto / valorDolar;
-        return `US$ ${convertido.toFixed(2)}`;
-    }
-    return `$${monto}`;
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyCDUqV8qJ_rAgbGzbDyYFRSYbayP9kjZYg",
+  authDomain: "finanzasapp-c5a87.firebaseapp.com",
+  projectId: "finanzasapp-c5a87",
+  storageBucket: "finanzasapp-c5a87.firebasestorage.app",
+  messagingSenderId: "416253504177",
+  appId: "1:416253504177:web:e9ac50c635c6919eb01090",
+  measurementId: "G-LNS81RHGQC"
 };
 
-// ==========================================
-// CÁLCULOS MATEMÁTICOS Y CONTADORES
-// ==========================================
-const actualizarContadores = () => {
-    const ingresosTotales = transacciones
-        .filter(item => item.tipo === 'ingreso')
-        .reduce((sum, item) => sum + item.monto, 0);
 
-    const gastosTotales = transacciones
-        .filter(item => item.tipo === 'gasto')
-        .reduce((sum, item) => sum + item.monto, 0);
+if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+}
+const db = firebase.firestore();
+const auth = firebase.auth();
 
-    // Formateamos los textos dinámicamente según la moneda elegida
-    balanceIngresos.textContent = formatearMoneda(ingresosTotales);
-    balanceGastos.textContent = formatearMoneda(gastosTotales);
-    balanceNeto.textContent = formatearMoneda(ingresosTotales - gastosTotales);
+// Captura de Elementos
+const transaccionForm = document.getElementById('transaccion-form');
+const tablaCuerpo = document.getElementById('tabla-cuerpo');
+const btnLogout = document.getElementById('btn-logout');
+const btnVaciar = document.getElementById('btn-vaciar');
+const selectPlanilla = document.getElementById('select-planilla');
+const btnCrearPlanilla = document.getElementById('btn-crear-planilla');
+const nuevaPlanillaInput = document.getElementById('nueva-planilla-nombre');
 
-    if (limiteGastos > 0 && gastosTotales > limiteGastos) {
-        alertaPresupuesto.classList.remove('d-none');
+const balIngresos = document.getElementById('balance-ingresos');
+const balGastos = document.getElementById('balance-gastos');
+const balNeto = document.getElementById('balance-neto');
+const tituloTabla = document.getElementById('titulo-tabla-planilla');
+
+let usuarioActual = null;
+let miGraficoPizza = null;
+let planillaSeleccionada = "General"; 
+let datosCompletosUser = {}; 
+
+// Escucha del estado de autenticación
+auth.onAuthStateChanged((user) => {
+    if (user) {
+        usuarioActual = user;
+        escucharEstructuraMultiPlanilla(user.uid);
     } else {
-        alertaPresupuesto.classList.add('d-none');
+        window.location.href = 'index.html';
     }
-};
-
-const calcularEstadisticas = () => {
-    const listaGastos = transacciones.filter(item => item.tipo === 'gasto');
-
-    if (listaGastos.length === 0) {
-        txtGastoMaximo.textContent = formatearMoneda(0);
-        txtGastoPromedio.textContent = formatearMoneda(0);
-        return;
-    }
-
-    const montos = listaGastos.map(g => g.monto);
-    const maximo = Math.max(...montos);
-    txtGastoMaximo.textContent = formatearMoneda(maximo);
-
-    const FraserSuma = montos.reduce((sum, val) => sum + val, 0);
-    const promedio = FraserSuma / listaGastos.length;
-    txtGastoPromedio.textContent = formatearMoneda(promedio);
-};
-
-// ==========================================
-// RENDERIZADO DEL HISTORIAL Y HERRAMIENTA A (SORT BY DATE)
-// ==========================================
-const renderizarTabla = () => {
-    listaTransacciones.innerHTML = ''; 
-
-    // HERRAMIENTA A: Ordenar el array por fecha de la más nueva a la más vieja antes de filtrar
-    transacciones.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-
-    const transaccionesFiltradas = transacciones.filter(item => {
-        if (filtroActual === 'todos') return true;
-        return item.tipo === filtroActual;
-    });
-
-    transaccionesFiltradas.forEach((item) => {
-        const tr = document.createElement('tr');
-        const colorMonto = item.tipo === 'ingreso' ? 'text-success fw-bold' : 'text-danger fw-bold';
-        const badge = item.tipo === 'ingreso' ? 'bg-success' : 'bg-danger';
-
-        // Formatear fecha para que quede más linda a la vista (DD/MM/AAAA)
-        const [anio, mes, dia] = item.fecha.split('-');
-        const fechaFormateada = `${dia}/${mes}/${anio}`;
-
-        tr.innerHTML = `
-            <td><small class="text-muted">${fechaFormateada}</small></td>
-            <td>${item.concepto}</td>
-            <td><span class="badge ${badge}">${item.tipo.toUpperCase()}</span></td>
-            <td class="${colorMonto}">${formatearMoneda(item.monto)}</td>
-            <td>
-                <button class="btn btn-sm btn-outline-secondary btn-eliminar" data-id="${item.id}">Eliminar</button>
-            </td>
-        `;
-        listaTransacciones.appendChild(tr);
-    });
-
-    asignarEventosEliminar();
-};
-
-const guardarEnStorage = () => {
-    localStorage.setItem('finanzas_datos', JSON.stringify(transacciones));
-};
-
-// ==========================================
-// CAPTURA DE EVENTOS Y ENVÍOS
-// ==========================================
-transaccionForm.addEventListener('submit', (e) => {
-    e.preventDefault(); 
-
-    const nuevaTransaccion = {
-        id: Date.now(),
-        concepto: document.getElementById('concept').value,
-        monto: parseFloat(document.getElementById('amount').value),
-        fecha: document.getElementById('date').value, // Guardamos la fecha elegida
-        tipo: document.getElementById('type').value
-    };
-
-    transacciones.push(nuevaTransaccion);
-
-    guardarEnStorage();
-    renderizarTabla();
-    actualizarContadores();
-    
-    // Reseteamos el form pero mantenemos la fecha de hoy marcada
-    transaccionForm.reset(); 
-    inputFecha.value = new Date().toISOString().split('T')[0];
 });
 
-const asignarEventosEliminar = () => {
-    document.querySelectorAll('.btn-eliminar').forEach(boton => {
-        boton.addEventListener('click', (e) => {
-            const idParaEliminar = parseInt(e.target.getAttribute('data-id'));
-            transacciones = transacciones.filter(item => item.id !== idParaEliminar);
+// Crear una nueva planilla de forma segura sin romper Firestore
+if (btnCrearPlanilla) {
+    btnCrearPlanilla.addEventListener('click', async () => {
+        const nombre = nuevaPlanillaInput.value.trim();
+        if (!nombre) return alert("Por favor, ingresá un nombre para la planilla.");
+        
+        if (nombre.includes('.') || nombre.includes('/') || nombre.includes('*')) {
+            return alert("El nombre no puede incluir puntos, barras ni asteriscos.");
+        }
+
+        try {
+            const userRef = db.collection("usuarios_gasto").doc(usuarioActual.uid);
+            const docSnap = await userRef.get();
+
+            let estructuraPlanillas = {};
+
+            if (docSnap.exists && docSnap.data().planillas) {
+                estructuraPlanillas = { ...docSnap.data().planillas };
+            }
             
-            guardarEnStorage();
-            renderizarTabla();
-            actualizarContadores();
-            calcularEstadisticas();
+            if (estructuraPlanillas[nombre]) {
+                return alert("Ese nombre de planilla ya existe.");
+            }
+
+            estructuraPlanillas[nombre] = { transacciones: [] };
+
+            await userRef.set({
+                planillas: estructuraPlanillas
+            }, { merge: true });
+            
+            planillaSeleccionada = nombre;
+            nuevaPlanillaInput.value = '';
+            alert(`¡Planilla "${nombre}" creada de forma correcta!`);
+        } catch (e) {
+            console.error("Error al crear planilla: ", e);
+            alert("Error de permisos en Firebase Database.");
+        }
+    });
+}
+
+// Cambiar de planilla activa
+if (selectPlanilla) {
+    selectPlanilla.addEventListener('change', (e) => {
+        planillaSeleccionada = e.target.value;
+        renderizarPlanillaActiva();
+    });
+}
+
+// Registrar movimientos en la planilla seleccionada
+if (transaccionForm) {
+    transaccionForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const concepto = document.getElementById('concept').value;
+        const monto = parseFloat(document.getElementById('amount').value);
+        const fechaManual = document.getElementById('date').value;
+        const tipo = document.getElementById('type').value;
+        const categoria = document.getElementById('category').value.trim();
+
+        const partesFecha = fechaManual.split('-');
+        const fechaFormateada = `${partesFecha[2]}/${partesFecha[1]}/${partesFecha[0]}`;
+        
+        const nuevoMovimiento = {
+            id: Date.now(),
+            concepto: concepto,
+            monto: monto,
+            tipo: tipo,
+            categoria: tipo === 'ingreso' ? 'Ingreso' : categoria,
+            fecha: fechaFormateada
+        };
+
+        try {
+            const userRef = db.collection("usuarios_gasto").doc(usuarioActual.uid);
+            
+            const actuales = (datosCompletosUser.planillas && datosCompletosUser.planillas[planillaSeleccionada]) 
+                ? datosCompletosUser.planillas[planillaSeleccionada].transacciones || [] : [];
+            
+            actuales.push(nuevoMovimiento);
+
+            await userRef.set({
+                planillas: {
+                    [planillaSeleccionada]: { transacciones: actuales }
+                }
+            }, { merge: true });
+
+            transaccionForm.reset();
+            establecerFechaDeHoy();
+        } catch (error) {
+            console.error(error);
+        }
+    });
+}
+
+// Escucha en tiempo real de toda la estructura de planillas
+function escucharEstructuraMultiPlanilla(userId) {
+    db.collection("usuarios_gasto").doc(userId)
+    .onSnapshot((docSnap) => {
+        // Inicializa la primera planilla si la colección está vacía
+        if (!docSnap.exists || !docSnap.data().planillas) {
+            db.collection("usuarios_gasto").doc(userId).set({
+                planillas: { "General": { transacciones: [] } }
+            }, { merge: true });
+            return;
+        }
+
+        datosCompletosUser = docSnap.data();
+        
+        // Renderizar el selector desplegable dinámico
+        const listaPlanillas = Object.keys(datosCompletosUser.planillas);
+        selectPlanilla.innerHTML = '';
+        listaPlanillas.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p;
+            opt.innerText = p;
+            opt.selected = (p === planillaSeleccionada);
+            selectPlanilla.appendChild(opt);
+        });
+
+        renderizarPlanillaActiva();
+        renderizarPizzaGlobal(datosCompletosUser.planillas);
+    });
+}
+
+// Pintar tabla e indicadores de la planilla activa
+function renderizarPlanillaActiva() {
+    if (!tablaCuerpo) return;
+    tablaCuerpo.innerHTML = '';
+    tituloTabla.innerText = `Historial: ${planillaSeleccionada}`;
+
+    let inc = 0, gast = 0;
+    const planilla = datosCompletosUser.planillas[planillaSeleccionada];
+    
+    if (planilla && planilla.transacciones) {
+        planilla.transacciones.forEach(item => {
+            const esGasto = item.tipo === 'gasto';
+            if (esGasto) gast += item.monto; 
+            else inc += item.monto;
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.fecha}</td>
+                <td style="font-weight:500;">${item.concepto}</td>
+                <td><span class="badge bg-secondary">${item.categoria}</span></td>
+                <td style="color:${esGasto ? '#dc3545':'#198754'}; font-weight:bold;">$${item.monto}</td>
+                <td><button class="btn-borrar-item" data-id="${item.id}" style="background:none; border:none; cursor:pointer;">❌</button></td>
+            `;
+            tablaCuerpo.appendChild(tr);
+        });
+    }
+
+    balIngresos.innerText = `$${inc}`;
+    balGastos.innerText = `$${gast}`;
+    balNeto.innerText = `$${inc - gast}`;
+
+    // Evento para remover movimientos sueltos
+    document.querySelectorAll('.btn-borrar-item').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const idBorrar = parseFloat(btn.getAttribute('data-id'));
+            const actuales = datosCompletosUser.planillas[planillaSeleccionada].transacciones;
+            const filtrados = actuales.filter(t => t.id !== idBorrar);
+
+            await db.collection("usuarios_gasto").doc(usuarioActual.uid).set({
+                planillas: {
+                    [planillaSeleccionada]: { transacciones: filtrados }
+                }
+            }, { merge: true });
         });
     });
-};
+}
 
-// Filtros de la lista
-botonesFiltro.forEach(boton => {
-    boton.addEventListener('click', (e) => {
-        botonesFiltro.forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        filtroActual = e.target.getAttribute('data-filter');
-        renderizarTabla();
+// VINCULACIÓN: Une y calcula los porcentajes de todas las categorías en la pizza general
+function renderizarPizzaGlobal(todasLasPlanillas) {
+    const canvasElement = document.getElementById('graficoPizza');
+    if (!canvasElement) return;
+
+    let categoriasDinamicas = {};
+    let totalGastosGlobal = 0;
+
+    Object.keys(todasLasPlanillas).forEach(nombrePlanilla => {
+        const transacciones = todasLasPlanillas[nombrePlanilla].transacciones || [];
+        transacciones.forEach(item => {
+            if (item.tipo === 'gasto') {
+                totalGastosGlobal += item.monto;
+                if (!categoriasDinamicas[item.categoria]) {
+                    categoriasDinamicas[item.categoria] = 0;
+                }
+                categoriasDinamicas[item.categoria] += item.monto;
+            }
+        });
     });
-});
 
-// Evento para cambiar de divisa (ARS / USD)
-selectMoneda.addEventListener('change', (e) => {
-    monedaActual = e.target.value;
-    renderizarTabla();
-    actualizarContadores();
-});
+    const etiquetas = Object.keys(categoriasDinamicas);
+    const valores = etiquetas.map(cat => ((categoriasDinamicas[cat] / totalGastosGlobal) * 100).toFixed(1));
 
-// Actualizar cotización del dólar
-btnGuardarDolar.addEventListener('click', () => {
-    valorDolar = parseFloat(inputDolar.value) || 1000;
-    localStorage.setItem('finanzas_dolar', valorDolar);
-    renderizarTabla();
-    actualizarContadores();
-    alert('Cotización del dólar actualizada.');
-});
+    // Paleta de colores rotativos HSL automáticos para que varíen siempre
+    const colores = etiquetas.map((_, i) => `hsl(${(i * 360 / etiquetas.length) % 360}, 75%, 55%)`);
 
-// Guardar configuración del límite de presupuesto
-btnGuardarConfig.addEventListener('click', () => {
-    limiteGastos = parseFloat(inputLimite.value) || 0;
-    localStorage.setItem('finanzas_limite', limiteGastos);
-    actualizarContadores();
-    alert('¡Límite de presupuesto guardado!');
-});
+    if (miGraficoPizza) miGraficoPizza.destroy();
 
-// ==========================================
-// HERRAMIENTA C: LOGICA DE VACIAR TODO
-// ==========================================
-btnVaciarTodo.addEventListener('click', () => {
-    // Usamos confirm() para pedir validación lógica antes de borrar
-    const confirmacion = confirm('¿Estás completamente seguro de que querés borrar TODO el historial? Esta acción no se puede deshacer.');
-    
-    if (confirmacion) {
-        transacciones = []; // Vaciamos el array por completo
-        localStorage.removeItem('finanzas_datos'); // Limpiamos el localStorage
-        renderizarTabla();
-        actualizarContadores();
-        alert('Historial borrado con éxito.');
-    }
-});
+    miGraficoPizza = new Chart(canvasElement.getContext('2d'), {
+        type: 'pie',
+        data: {
+            labels: etiquetas,
+            datasets: [{
+                data: valores,
+                backgroundColor: colores,
+                borderWidth: 1
+            }]
+        },
+        options: { responsive: true }
+    });
+}
 
-// ==========================================
-// ARRANQUE INICIAL
-// ==========================================
-renderizarTabla();
-actualizarContadores();
+// Borrar el contenido entero de una planilla
+if (btnVaciar) {
+    btnVaciar.addEventListener('click', async () => {
+        if (confirm(`¿Estás seguro de vaciar por completo los movimientos de la planilla "${planillaSeleccionada}"?`)) {
+            await db.collection("usuarios_gasto").doc(usuarioActual.uid).set({
+                planillas: {
+                    [planillaSeleccionada]: { transacciones: [] }
+                }
+            }, { merge: true });
+        }
+    });
+}
+
+if (btnLogout) { btnLogout.addEventListener('click', () => auth.signOut()); }
+
+function establecerFechaDeHoy() {
+    const inputFecha = document.getElementById('date');
+    if (inputFecha) inputFecha.valueAsDate = new Date();
+}
+establecerFechaDeHoy();
